@@ -21,8 +21,7 @@ class RendererElement(enum.Enum):
 
 
 class SpecBase:
-    def __init__(self, spec=None, task_mgr=True, pipe=None, loader=True,
-                 base=True):
+    def __init__(self, spec=None, pipe=None, task_mgr=True, base=True):
         if task_mgr:
             self.task_mgr = AsyncTaskManager.get_global_ptr()
         self.engine = GraphicsEngine.get_global_ptr()
@@ -33,8 +32,7 @@ class SpecBase:
             self.pipe = available_pipes.make_default_pipe()
         else:
             self.pipe = available_pipes.make_module_pipe(pipe)
-        if loader:
-            self.loader = Loader.getGlobalPtr()
+        self.loader = Loader.getGlobalPtr()
         self._setup = {
             RendererElement.WINDOW: {},
             RendererElement.SCENE_GRAPH: {},
