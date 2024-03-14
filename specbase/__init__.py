@@ -3,24 +3,48 @@ import enum
 from panda3d.core import AsyncTaskManager
 from panda3d.core import GraphicsEngine
 from panda3d.core import GraphicsPipeSelection
-from panda3d.core import Loader
 from panda3d.core import FrameBufferProperties
 from panda3d.core import WindowProperties
 from panda3d.core import GraphicsPipe
 from panda3d.core import NodePath
 from panda3d.core import Camera
-from panda3d.core import LoaderOptions
 from panda3d.core import Filename
+
+from direct.showbase import Loader
+
+
+default_flags = GraphicsPipe.BF_fb_props_optional
+
+
+class SBPipe:
+    def __init__(self, name, pipe_name=None, add_to_base=True):
+        self.name = name
+        self.pipe_name = pipe_name
+        self.add_to_base = add_to_base
+
+
+class SBEngine:
+    def __init__(self, name, pipe=None, add_to_base=True):
+        self.name = name
+        self.pipe = pipe
+        self.add_to_base = add_to_base
 
 
 class SBWindow:
-    def __init__(self, name, add_to_base=True):
+    def __init__(self, name, pipe=None, sort=0, fb_props=None, win_props=None, flags=default_flags, add_to_base=True):
         self.name = name
+        self.pipe = pipe
+        self.sort = sort
+        if fb_props is None:
+            self.fb_props = FrameBufferProperties.getDefault()
+        else:
+            self.fb_props = fb_props
+        if win_props is None:
+            self.win_props = WindowProperties.getDefault()
+        else:
+            self.win_props = win_props
+        self.flags = flags
         self.add_to_base = add_to_base
-        self.fbprops = FrameBufferProperties.getDefault()
-        self.wprops = WindowProperties.getDefault()
-        self.flags = GraphicsPipe.BFFbPropsOptional | GraphicsPipe.BFRequireWindow
-        self.sort = 0
 
 
 class SBSceneGraph:
@@ -44,22 +68,29 @@ class SBDisplayRegion:
         self.add_to_base = add_to_base
 
 
-class SpecBase:
-    def __init__(self, spec=None, pipe=None, task_mgr=True, base=True):
+class LoaderBase:
+    def __init__(self):
+        self.loader = Loader.Loader(self)
+
+
+class SpecBase(LoaderBase):
+    def __init__(self, spec=None, task_mgr=True, base=True):
+        LoaderBase.__init__(self)
         if task_mgr:
             self.task_mgr = AsyncTaskManager.get_global_ptr()
-        self.engine = GraphicsEngine.get_global_ptr()
 
-        available_pipes = GraphicsPipeSelection.get_global_ptr()
-        available_pipes.print_pipe_types()
-        if pipe is None:
-            self.pipe = available_pipes.make_default_pipe()
-        else:
-            self.pipe = available_pipes.make_module_pipe(pipe)
-        self.loader = Loader.getGlobalPtr()
         self._setup = {}
         if base:
             __builtins__["base"] = self
+
+        self.type_to_func = {
+            SBPipe: (self.add_pipe, self.del_pipe),
+            SBEngine: (self.add_engine, self.del_engine),
+            SBWindow: (self.add_window, self.del_window),
+            SBSceneGraph: (self.add_scene_graph, self.del_scene_graph),
+            SBCamera: (self.add_camera, self.del_camera),
+            SBDisplayRegion: (self.add_display_region, self.del_display_region),
+        }
         if spec is not None:
             self.respec(spec)
 
@@ -72,21 +103,25 @@ class SpecBase:
             self.step()
 
     def respec(self, spec):
-        # First, we add all new elements *except* DisplayRegions, and
-        # then those too.
-        for sb_element in [elem for elem in spec if not isinstance(elem, SBDisplayRegion)]:
-            self.process_for_addition(sb_element)
-        for sb_element in [elem for elem in spec if isinstance(elem, SBDisplayRegion)]:
-            self.process_for_addition(sb_element)
+        creation_order = [
+            SBPipe,
+            SBEngine,
+            SBWindow,
+            SBSceneGraph,
+            SBCamera,
+            SBDisplayRegion,
+        ]
+        for sb_element_type in creation_order:
+            for sb_element in [elem for elem in spec if isinstance(elem, sb_element_type)]:
+                self.process_for_addition(sb_element)
 
         next_state_names = set([elem.name for elem in spec])
         current_state_names = set(self._setup.keys())
         obsolete_names = current_state_names - next_state_names
         obsolete_states = [self._setup[name][0] for name in obsolete_names]
-        for sb_element in [elem for elem in obsolete_states if isinstance(elem, SBDisplayRegion)]:
-            self.process_for_deletion(sb_element)
-        for sb_element in [elem for elem in obsolete_states if not isinstance(elem, SBDisplayRegion)]:
-            self.process_for_deletion(sb_element)
+        for sb_element_type in reversed(creation_order):
+            for sb_element in [elem for elem in obsolete_states if isinstance(elem, sb_element_type)]:
+                self.process_for_deletion(sb_element)
 
     def process_for_addition(self, sb_element):
         element_name = sb_element.name
@@ -110,39 +145,48 @@ class SpecBase:
         del self._setup[sb_element.name]
 
     def add_element(self, sb_element):
-        if isinstance(sb_element, SBWindow):
-            return self.add_window(sb_element)
-        elif isinstance(sb_element, SBSceneGraph):
-            return self.add_scene_graph(sb_element)
-        elif isinstance(sb_element, SBCamera):
-            return self.add_camera(sb_element)
-        elif isinstance(sb_element, SBDisplayRegion):
-            return self.add_display_region(sb_element)
-        else:
-            raise ValueError(f"Unknown element type {type(sb_element)} for name {sb_element.name}")
+        add_func, _ = self.type_to_func[type(sb_element)]
+        return add_func(sb_element)
 
     def del_element(self, sb_element):
         name = sb_element.name
-        if isinstance(sb_element, SBWindow):
-            self.del_window(name)
-        elif isinstance(sb_element, SBSceneGraph):
-            self.del_scene_graph(name)
-        elif isinstance(sb_element, SBCamera):
-            self.del_camera(name)
-        elif isinstance(sb_element, SBDisplayRegion):
-            self.del_display_region(name)
+        _, del_func = self.type_to_func[type(sb_element)]
+        del_func(name)
+
+    def add_pipe(self, sb_pipe):
+        available_pipes = GraphicsPipeSelection.get_global_ptr()
+        if sb_pipe.pipe_name is None:
+            pipe = available_pipes.make_default_pipe()
         else:
-            raise ValueError(f"Unknown element type {sb_element_type}")
+            pipe = available_pipes.make_module_pipe(sb_pipe.name)
+        return pipe
+
+    def del_pipe(self, name):
+        print(f"Pipe '{name}' will be removed when it falls out of scope.")
+
+    def add_engine(self, sb_engine):
+        if sb_engine.pipe is None:
+            engine = GraphicsEngine.get_global_ptr()
+        else:
+            _, pipe = self._setup[sb_engine.pipe]
+            engine = GraphicsEngine(pipe)
+        return engine
+
+    def del_engine(self, name):
+        print(f"Engine '{name}' will be removed when it falls out of scope.")
 
     def add_window(self, sb_window):
+        _, pipe = self._setup[sb_window.pipe]
         window = self.engine.make_output(
-            self.pipe,
+            pipe,
             sb_window.name,
             sb_window.sort,
-            sb_window.fbprops,
-            sb_window.wprops,
+            sb_window.fb_props,
+            sb_window.win_props,
             sb_window.flags,
         )
+        if window is None:
+            raise Exception(f"Couldn't create window '{sb_window.name}'")
         return window
 
     def del_window(self, name):
@@ -183,15 +227,6 @@ class SpecBase:
     def del_display_region(self, name):
         _, dr = self._setup[name]
         dr.window.remove_display_region(dr)
-
-
-def load_model(name):
-    loader_options = LoaderOptions()
-    model = base.loader.load_sync(
-        Filename("models/smiley"),
-        loader_options,
-    )
-    return NodePath(model)
 
 
 def refov(camera, window):
