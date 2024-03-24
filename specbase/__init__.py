@@ -10,7 +10,7 @@ from panda3d.core import NodePath
 from panda3d.core import Camera
 from panda3d.core import Filename
 
-from direct.showbase import Loader
+from specbase.debased import LoaderBase, TaskManagerBase
 
 
 default_flags = GraphicsPipe.BF_fb_props_optional
@@ -67,33 +67,6 @@ class SBDisplayRegion:
         self.dimensions = dimensions
         self.add_to_base = add_to_base
 
-
-class LoaderBase:
-    def __init__(self):
-        self.loader = Loader.Loader(self)
-
-
-def render_frame(graphics_engine):
-    graphics_engine.render_frame()
-    graphics_engine.flip_frame()
-
-
-def render_frame_task(graphics_engine):
-    def task_func(task):
-        render_frame(graphics_engine)
-        return task.cont
-    return task_func
-
-
-class TaskManagerBase:
-    def __init__(self):
-        from direct.task.TaskManagerGlobal import taskMgr
-        self.task_mgr = taskMgr
-
-    def run(self) -> None: # pylint: disable=method-hidden
-        self.task_mgr.run()
-
-
 # class NoTaskMgrBase:
 #     def step(self):
 #         self.engine.render_frame()
@@ -103,10 +76,16 @@ class TaskManagerBase:
 #         while True:
 #             self.step()
 
-
-class SpecBase(LoaderBase, TaskManagerBase):
-    def __init__(self, spec=None, task_mgr=True, base=True):
+class Debased(LoaderBase, TaskManagerBase):
+    def __init__(self, task_mgr=False):
         LoaderBase.__init__(self)
+        if task_mgr:
+            TaskManagerBase.__init__(self)
+
+
+class SpecBase(Debased):
+    def __init__(self, spec=None, task_mgr=True, base=True):
+        Debased.__init__(self, task_mgr=task_mgr)
         if task_mgr:
             TaskManagerBase.__init__(self)
 

@@ -1,7 +1,6 @@
 from panda3d.core import Vec4
 
 from specbase import SpecBase
-from specbase import LoaderBase
 from specbase import (
     SBPipe,
     SBEngine,
@@ -11,8 +10,8 @@ from specbase import (
     SBDisplayRegion,
 )
 from specbase import refov
-from specbase import render_frame
-from specbase import render_frame_task
+from specbase.debased import render_frame
+from specbase.debased import render_frame_task
 
 
 first_spec = [
