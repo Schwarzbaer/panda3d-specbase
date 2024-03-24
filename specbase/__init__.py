@@ -73,11 +73,42 @@ class LoaderBase:
         self.loader = Loader.Loader(self)
 
 
-class SpecBase(LoaderBase):
+def render_frame(graphics_engine):
+    graphics_engine.render_frame()
+    graphics_engine.flip_frame()
+
+
+def render_frame_task(graphics_engine):
+    def task_func(task):
+        render_frame(graphics_engine)
+        return task.cont
+    return task_func
+
+
+class TaskManagerBase:
+    def __init__(self):
+        from direct.task.TaskManagerGlobal import taskMgr
+        self.task_mgr = taskMgr
+
+    def run(self) -> None: # pylint: disable=method-hidden
+        self.task_mgr.run()
+
+
+# class NoTaskMgrBase:
+#     def step(self):
+#         self.engine.render_frame()
+#         self.engine.flip_frame()
+#  
+#     def run(self):
+#         while True:
+#             self.step()
+
+
+class SpecBase(LoaderBase, TaskManagerBase):
     def __init__(self, spec=None, task_mgr=True, base=True):
         LoaderBase.__init__(self)
         if task_mgr:
-            self.task_mgr = AsyncTaskManager.get_global_ptr()
+            TaskManagerBase.__init__(self)
 
         self._setup = {}
         if base:
@@ -93,14 +124,6 @@ class SpecBase(LoaderBase):
         }
         if spec is not None:
             self.respec(spec)
-
-    def step(self):
-        self.engine.render_frame()
-        self.engine.flip_frame()
-
-    def run(self):
-        while True:
-            self.step()
 
     def respec(self, spec):
         creation_order = [

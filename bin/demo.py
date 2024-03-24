@@ -11,6 +11,8 @@ from specbase import (
     SBDisplayRegion,
 )
 from specbase import refov
+from specbase import render_frame
+from specbase import render_frame_task
 
 
 first_spec = [
@@ -29,7 +31,7 @@ base.cam.set_y(-10)
 refov(base.cam, base.win)
 model = base.loader.load_model("models/smiley")
 model.reparent_to(base.render)
-base.step()  # Let's render what's there already.
+render_frame(base.engine)  # Let's render what's there already.
 
 # We can change the spec at runtime by providing the intended state.
 second_spec = first_spec + [
@@ -45,7 +47,7 @@ base.cam_2.reparent_to(base.render)
 base.cam_2.set_h(45)
 base.cam_2.set_y(base.cam_2, -10)
 refov(base.cam_2, base.win)
-base.step()
+render_frame(base.engine)
 
 
 # Let's close the first window.
@@ -59,5 +61,5 @@ third_spec = [
 ]
 base.respec(third_spec)
 
-
+base.task_mgr.add(render_frame_task(base.engine))
 base.run()
